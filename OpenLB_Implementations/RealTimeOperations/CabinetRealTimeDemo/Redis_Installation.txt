@@ -1,0 +1,19 @@
+sudo apt update
+sudo apt install libhiredis-dev
+
+
+--------------------------------------------------------
+
+Usage with the complier
+
+nvcc -O3 -std=c++17 --forward-unknown-to-host-compiler -pthread --forward-unknown-to-host-compiler -x cu -O3 -std=c++17 --generate-code=arch=compute_87,
+code=[compute_87,sm_87] --extended-lambda --expt-relaxed-constexpr -rdc=true -Xcudafe "--diag_suppress=implicit_return_from_non_void_function --display_error_number
+ --diag_suppress=20014 --diag_suppress=20011" -DPLATFORM_CPU_SISD -DPLATFORM_GPU_CUDA -DDEFAULT_FLOATING_POINT_TYPE=double -I../../../src -I../../../external/zlib
+ -I../../../external/tinyxml -c -o "filename".o "filename".cpp
+
+nvcc "filename".o -o "filename" -lolbcore -L../../../external/lib -lpthread   -lz -ltinyxml -lcuda -lcudadevrt -lcudart -lhiredis -L../../../build/lib
+
+
+---------------------------------------------------------
+
+For Windows, download it through Visual studio. Export as DLLs.
