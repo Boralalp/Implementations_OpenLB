@@ -34,8 +34,6 @@ using T = FLOATING_POINT_TYPE;
 using NSDESCRIPTOR = D3Q27<FORCE,TAU_EFF>;
 using TDESCRIPTOR = D3Q27<VELOCITY,TAU_EFF>;
  
-#define BOUZIDI
- 
 #include <string>
 #include <iostream>
 #include <ios>
