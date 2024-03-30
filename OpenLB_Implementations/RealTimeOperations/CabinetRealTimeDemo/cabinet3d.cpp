@@ -579,7 +579,7 @@ int main( int argc, char* argv[] )
 
   std::shared_ptr<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>> converter = std::make_shared<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>>(
       (T) _converterProperties[1]/_converterProperties[0], // physDeltaX
-      (T) 0.1/(_converterProperties[8] * 1.75)*_converterProperties[1]/_converterProperties[0], // physDeltaT = charLatticeVelocity / charPhysVelocity * physDeltaX
+      (T) latticeVel/(_converterProperties[8] * 1.75)*_converterProperties[1]/_converterProperties[0], // physDeltaT = charLatticeVelocity / charPhysVelocity * physDeltaX
       (T) _converterProperties[1],  // charPhysLength
       (T) _converterProperties[8],  // charPhysVelocity
       (T) _converterProperties[2],  // physViscosity
