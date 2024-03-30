@@ -255,6 +255,7 @@ void computePowerInOne(SuperGeometry<T,3>& superGeometry,
   std::cout << "The Dimensions are (" << Nx << ", " << Ny << ", " << Nz << ")" << std::endl;
 
   //Loop Around the Object
+  //The loop can be optimized by changing the increment to the length of the object
   for (int iC = 0; iC < NSlattice.getLoadBalancer().size(); iC++) 
   {
     for (int iZ = startCorner[2]/L - 5; iZ < endCorner[2]/L + 5; ++iZ)
