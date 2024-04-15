@@ -590,8 +590,6 @@ int main( int argc, char* argv[] )
   singleton::directories().setOutputDir( "./tmp/" );
   OstreamManager clout( std::cout,"main" );
  
-  clout << "Siemens Cabinet Configurator..." << std::endl;
-
   // The Initial Parameters for the simulation setup
   readConverterValues();
 
