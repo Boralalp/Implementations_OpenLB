@@ -34,6 +34,8 @@ using T = FLOATING_POINT_TYPE;
 using NSDESCRIPTOR = D3Q27<FORCE,TAU_EFF>;
 using TDESCRIPTOR = D3Q27<VELOCITY,TAU_EFF>;
  
+#define BOUZIDI
+ 
 #include <string>
 #include <iostream>
 #include <ios>
@@ -66,6 +68,7 @@ std::vector<std::string> fileName;
 std::vector<std::string> _oldSimulationData = {"60", "2.25", "0.04", "300", "300", "0", "0"};
 std::vector<std::string> _changedSimulationData = {"60", "2.25", "0.04", "300", "300", "0", "0"};
 bool changeInSimulation = false;
+bool firstTime = true;
  
 // Set up the geometry of the simulation
 void prepareLattice( SuperLattice<T,NSDESCRIPTOR>& NSlattice,
@@ -96,8 +99,8 @@ void prepareLattice( SuperLattice<T,NSDESCRIPTOR>& NSlattice,
  
   using ForcedSpecialdynamics = dynamics::Tuple<T, TDESCRIPTOR, momenta::BulkTuple, equilibria::SecondOrder, collision::OmegaFromCellTauEff<collision::BGK>, AdvectionDiffusionExternalVelocityCollision >;
  
-  NSlattice.defineDynamics<ExternalTauEffLESForcedBGKdynamics<T,NSDESCRIPTOR>>(superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6}));
-  ADlattice.defineDynamics<ForcedSpecialdynamics>(superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6}));
+  NSlattice.defineDynamics<ExternalTauEffLESForcedBGKdynamics<T,NSDESCRIPTOR>>(superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6, 7}));
+  ADlattice.defineDynamics<ForcedSpecialdynamics>(superGeometry.getMaterialIndicator({1, 2, 4, 5, 6}));
   NSlattice.setParameter<collision::LES::Smagorinsky>(smagoConst);
   ADlattice.setParameter<collision::LES::Smagorinsky>(smagoConst);
  
@@ -114,17 +117,31 @@ void prepareLattice( SuperLattice<T,NSDESCRIPTOR>& NSlattice,
   setInterpolatedVelocityBoundary(NSlattice, NSomega, superGeometry, 3);
   setInterpolatedVelocityBoundary(NSlattice, NSomega, superGeometry, 6);
 
-
   setAdvectionDiffusionTemperatureBoundary(ADlattice, Tomega, superGeometry, 2);
   setAdvectionDiffusionTemperatureBoundary(ADlattice, Tomega, superGeometry, 4);
   setAdvectionDiffusionTemperatureBoundary(ADlattice, Tomega, superGeometry, 6);
  
   // Initialize all values of distribution functions to their local equilibrium
   NSlattice.defineRho( superGeometry, 1, rhoF);
-  NSlattice.defineU( superGeometry, 1, uF );
-  NSlattice.iniEquilibrium( superGeometry, 1, rhoF, uF );
-  ADlattice.defineRho(superGeometry, 1, T_cold);
-  ADlattice.iniEquilibrium(superGeometry, 1, T_cold, uF);
+  NSlattice.defineU( superGeometry, 1, fieldU );
+  NSlattice.iniEquilibrium( superGeometry, 1, rhoF, fieldU );
+  if(firstTime)
+  {
+    ADlattice.defineRho(superGeometry, 1, T_cold);
+    ADlattice.iniEquilibrium(superGeometry, 1, T_cold, uF);
+    firstTime = false;
+  }
+  else
+  {
+    NSlattice.defineU( superGeometry, 1, fieldU );
+    NSlattice.iniEquilibrium( superGeometry, 1, rhoF, fieldU );
+
+    AnalyticalConst3D<T,T> TconvertHot(Thot);
+    AnalyticalConst3D<T,T> TconvertCold(Tcold);
+
+    ADlattice.defineRho(superGeometry, 1, ((fieldT-TconvertCold)/(TconvertHot-TconvertCold))*(T_hot-T_cold)+T_cold);
+    ADlattice.iniEquilibrium(superGeometry, 1, ((fieldT-TconvertCold)/(TconvertHot-TconvertCold))*(T_hot-T_cold)+T_cold, fieldU);
+  }
   ADlattice.defineRho(superGeometry, 2, T_cold);
   ADlattice.iniEquilibrium(superGeometry, 2, T_cold, uF);
 
@@ -138,8 +155,8 @@ void prepareLattice( SuperLattice<T,NSDESCRIPTOR>& NSlattice,
   AnalyticalConst3D<T,T> tauNS(1./NSomega);
   AnalyticalConst3D<T,T> tauAD(1./Tomega);
  
-  NSlattice.defineField<descriptors::TAU_EFF>( superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6}), tauNS );
-  ADlattice.defineField<descriptors::TAU_EFF>( superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6}), tauAD );
+  NSlattice.defineField<descriptors::TAU_EFF>( superGeometry.getMaterialIndicator({1, 2, 3, 4, 5, 6, 7}), tauNS );
+  ADlattice.defineField<descriptors::TAU_EFF>( superGeometry.getMaterialIndicator({1, 2, 4, 5, 6}), tauAD );
  
   NSlattice.setParameter<descriptors::OMEGA>(NSomega);
   ADlattice.setParameter<descriptors::OMEGA>(Tomega);
@@ -573,28 +590,29 @@ int main( int argc, char* argv[] )
   singleton::directories().setOutputDir( "./tmp/" );
   OstreamManager clout( std::cout,"main" );
  
-  clout << "Cabinet Configurator..." << std::endl;
+  clout << "Siemens Cabinet Configurator..." << std::endl;
 
+  // The Initial Parameters for the simulation setup
   readConverterValues();
 
   std::shared_ptr<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>> converter = std::make_shared<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>>(
       (T) _converterProperties[1]/_converterProperties[0], // physDeltaX
-      (T) latticeVel/(_converterProperties[8] * 1.75)*_converterProperties[1]/_converterProperties[0], // physDeltaT = charLatticeVelocity / charPhysVelocity * physDeltaX
+      (T) 0.1/(_converterProperties[8] * 1.75)*_converterProperties[1]/_converterProperties[0], // physDeltaT = charLatticeVelocity / charPhysVelocity * physDeltaX
       (T) _converterProperties[1],  // charPhysLength
       (T) _converterProperties[8],  // charPhysVelocity
-      (T) _converterProperties[2],  // physViscosity
-      (T) _converterProperties[3],  // physDensity
-      (T) 25.684e-3,                // physThermalConductivity
-      (T) _converterProperties[7] * 25.684e-3 / _converterProperties[2] / _converterProperties[3], // physSpecificHeatCapacity
-      (T) 0.00341,                  // physThermalExpansionCoefficient
-      (T) _converterProperties[5],  // charPhysLowTemperature
-      (T) _converterProperties[6]   // charPhysHighTemperature
+      (T) _converterProperties[2],
+      (T) _converterProperties[3],
+      (T) 25.684e-3,
+      (T) _converterProperties[7] * 25.684e-3 / _converterProperties[2] / _converterProperties[3],
+      (T) 0.00341,
+      (T) _converterProperties[5],
+      (T) _converterProperties[6]
   );
 
+  // The Initial Parameters for the simulatio
   converter->print();
   converter->write("cabinet3d");
 
-  // Reset parameters based on the UI data
   N = _converterProperties[0];
   L = _converterProperties[1]/_converterProperties[0];
 
@@ -603,8 +621,7 @@ int main( int argc, char* argv[] )
 
   _oldSimulationData[1] = std::to_string(_converterProperties[8]);
   _changedSimulationData[1] = std::to_string(_converterProperties[8]);
-  
-  // Get geometry data from the UI
+
   bool getGeometryData = false;
   while(!getGeometryData)
   {
@@ -612,10 +629,9 @@ int main( int argc, char* argv[] )
     std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 
-  // Remove domain from the file paths so it is not read in prepareGeometry step
-  std::string folder_name = "stl";
+  std::string folder_name = "../stl";
   std::string file_extension = ".stl"; 
-  std::string domainPath = "stl/Domain.stl";
+  std::string domainPath = folder_name+"/Domain.stl";
   std::string domainFile = "Domain.stl";
   std::vector<std::string> filePaths;
   
@@ -646,7 +662,7 @@ int main( int argc, char* argv[] )
   }
 
 
-  std::shared_ptr<STLreader<T>> stlReader = std::make_shared<STLreader<T>>( "stl/Domain.stl", L, .001, 1, false  );
+  std::shared_ptr<STLreader<T>> stlReader = std::make_shared<STLreader<T>>( folder_name+"/Domain.stl", L, .001, 1, false  );
 
   // Move Domain to Origin
   std::array<T,3> shift;
@@ -673,10 +689,9 @@ int main( int argc, char* argv[] )
   std::shared_ptr<HeuristicLoadBalancer<T>> loadBalancer = std::make_shared<HeuristicLoadBalancer<T>>( *cuboidGeometry );
   std::shared_ptr<SuperGeometry<T,3>> superGeometry = std::make_shared<SuperGeometry<T,3>>( *cuboidGeometry, *loadBalancer );
 
-  // Prepare the Geometry
   prepareGeometry( *converter, *superGeometry, *extendedDomain, *stlReaderShifted, filePaths );
 
-  // Prepare Lattices
+  // === 3rd Step: Prepare Lattice ===
   std::shared_ptr<SuperLattice<T, NSDESCRIPTOR>> NSlattice = std::make_shared<SuperLattice<T, NSDESCRIPTOR>>(*superGeometry);
   std::shared_ptr<SuperLattice<T, TDESCRIPTOR>> ADlattice = std::make_shared<SuperLattice<T, TDESCRIPTOR>>(*superGeometry);
 
@@ -709,28 +724,25 @@ int main( int argc, char* argv[] )
   coupling.setParameter<SmagorinskyBoussinesqCoupling::OMEGA_ADE>(
     converter->getLatticeThermalRelaxationFrequency());
 
-  // Main Loop with Timer
+  // === 4th Step: Main Loop with Timer ===
   clout << "starting simulation..." << std::endl;
   util::Timer<T> timer( converter->getLatticeTime( maxPhysT ), superGeometry->getStatistics().getNvoxel() );
   timer.start();
 
   for ( std::size_t iT = 0; iT < converter->getLatticeTime( maxPhysT ); ++iT ) 
   {
-    // Update Boundary Values
     setBoundaryValues( *NSlattice, *ADlattice, *converter, iT, *superGeometry );
-
-    // Collide and Stream Execution
+    // === 6th Step: Collide and Stream Execution ===
     NSlattice->collideAndStream();
     ADlattice->collideAndStream();
 
     coupling.execute();
 
-    // Computation and Output of the Results
+    // === 7th Step: Computation and Output of the Results ===
     getResults( *converter, *NSlattice, *ADlattice, iT, *superGeometry, timer, *stlReaderOrigin );
 
     const int vtkIter  = converter->getLatticeTime( .2 );
 
-    // Check for a change in the UI
     if(iT%vtkIter == 0)
     {
       changeInSimulation = changeInSimulationData();
@@ -739,28 +751,28 @@ int main( int argc, char* argv[] )
       {
         changeInSimulation = false;
 
-        N = _converterProperties[0];
-        L = _converterProperties[1]/_converterProperties[0];
-
         clout << "There was a change in the simulation. Re-generating lattices." << std::endl;
 
         readConverterValues();
+
+        N = _converterProperties[0];
+        L = _converterProperties[1]/_converterProperties[0];
 
         std::shared_ptr<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>> newConverter = std::make_shared<ThermalUnitConverter<T, NSDESCRIPTOR, TDESCRIPTOR>>(
             (T) _converterProperties[1]/_converterProperties[0], // physDeltaX
             (T) latticeVel/(_converterProperties[8] * 1.75)*_converterProperties[1]/_converterProperties[0], // physDeltaT = charLatticeVelocity / charPhysVelocity * physDeltaX
             (T) _converterProperties[1],  // charPhysLength
             (T) _converterProperties[8],  // charPhysVelocity
-            (T) _converterProperties[2],  // physViscosity
-            (T) _converterProperties[3],  // physDensity
-            (T) 25.684e-3,                // physThermalConductivity
-            (T) _converterProperties[7] * 25.684e-3 / _converterProperties[2] / _converterProperties[3],  // physSpecificHeatCapacity
-            (T) 0.00341,                  // physThermalExpansionCoefficient
-            (T) _converterProperties[5],  // charPhysLowTemperature
-            (T) _converterProperties[6]   // charPhysHighTemperature
+            (T) _converterProperties[2],
+            (T) _converterProperties[3],
+            (T) 25.684e-3,
+            (T) _converterProperties[7] * 25.684e-3 / _converterProperties[2] / _converterProperties[3],
+            (T) 0.00341,
+            (T) _converterProperties[5],
+            (T) _converterProperties[6]
         );
 
-        std::shared_ptr<STLreader<T>> newStlReader = std::make_shared<STLreader<T>>( "stl/Domain.stl", L, .001, 1, false  );
+        std::shared_ptr<STLreader<T>> newStlReader = std::make_shared<STLreader<T>>( folder_name+"/Domain.stl", L, .001, 1, false  );
         std::array<T,3> shift;
         Vector<T,3> shiftVector;
         shiftVector = stlReader->getMin();
@@ -785,13 +797,8 @@ int main( int argc, char* argv[] )
         std::shared_ptr<HeuristicLoadBalancer<T>> newLoadBalancer = std::make_shared<HeuristicLoadBalancer<T>>( *newCuboidGeometry );
         std::shared_ptr<SuperGeometry<T,3>> newSuperGeometry = std::make_shared<SuperGeometry<T,3>>( *newCuboidGeometry, *newLoadBalancer );
 
-        stlReader.swap(newStlReader);
-        stlReaderOrigin.swap(newStlReaderOrigin);
-        stlReaderShifted.swap(newStlReaderShifted);
-        extendedDomain.swap(newExtendedDomain);
-        cuboidGeometry.swap(newCuboidGeometry);
-        loadBalancer.swap(newLoadBalancer);
-        superGeometry.swap(newSuperGeometry);
+        _oldSimulationData[1] = std::to_string(_converterProperties[8]);
+        _changedSimulationData[1] = std::to_string(_converterProperties[8]);
 
         getGeometryData = false;
         while(!getGeometryData)
@@ -800,12 +807,12 @@ int main( int argc, char* argv[] )
           std::this_thread::sleep_for(std::chrono::seconds(2));
         }
 
-        prepareGeometry( *newConverter, *superGeometry, *extendedDomain, *stlReaderShifted, filePaths );
+        prepareGeometry( *newConverter, *newSuperGeometry, *newExtendedDomain, *newStlReaderShifted, filePaths );
 
         clout << "Prepare Geometry Successful after Change." << std::endl;
 
-        std::shared_ptr<SuperLattice<T, NSDESCRIPTOR>> NSlatticeNew = std::make_shared<SuperLattice<T, NSDESCRIPTOR>>(*superGeometry);
-        std::shared_ptr<SuperLattice<T, TDESCRIPTOR>> ADlatticeNew = std::make_shared<SuperLattice<T, TDESCRIPTOR>>(*superGeometry);
+        std::shared_ptr<SuperLattice<T, NSDESCRIPTOR>> NSlatticeNew = std::make_shared<SuperLattice<T, NSDESCRIPTOR>>(*newSuperGeometry);
+        std::shared_ptr<SuperLattice<T, TDESCRIPTOR>> ADlatticeNew = std::make_shared<SuperLattice<T, TDESCRIPTOR>>(*newSuperGeometry);
 
         clout << "Generated Lattices after Change." << std::endl;
 
@@ -816,8 +823,7 @@ int main( int argc, char* argv[] )
 
         clout << "Preparing Lattices after Change." << std::endl;
         
-        // Treat Change in the mesh and the fan speed/boundary values differently
-        if(_oldSimulationData[0] != _changedSimulationData[0])
+        if(std::abs(std::stof(_oldSimulationData[0]) - std::stof(_changedSimulationData[0])) > 0.01)
         {
           // Change in Mesh Quality
           SuperLatticeVelocity3D<T, NSDESCRIPTOR> velocityChangeInitial( *NSlatticeNew );
@@ -825,10 +831,24 @@ int main( int argc, char* argv[] )
           SuperLatticePhysTemperature3D<T, NSDESCRIPTOR, TDESCRIPTOR> temperatureChangeInitial(*ADlatticeNew, *converter);
           AnalyticalFfromSuperF3D<T> newfieldTemperatureInitial(temperatureChangeInitial, true);
 
-          prepareLattice(  *NSlatticeNew, *ADlatticeNew, *newConverter, *superGeometry, newfieldVelocityInitial, newfieldTemperatureInitial);
+          _oldSimulationData[0] = std::to_string(_converterProperties[0]);
+          _changedSimulationData[0] = std::to_string(_converterProperties[0]);
+
+          prepareLattice(  *NSlatticeNew, *ADlatticeNew, *newConverter, *newSuperGeometry, newfieldVelocityInitial, newfieldTemperatureInitial);
         }
         else
-          prepareLattice(  *NSlatticeNew, *ADlatticeNew, *newConverter, *superGeometry, newfieldVelocity, newfieldTemperature);
+        {
+          clout << "Keeping the old field..." << std::endl;
+          prepareLattice(  *NSlatticeNew, *ADlatticeNew, *newConverter, *newSuperGeometry, newfieldVelocity, newfieldTemperature);
+        }
+
+        stlReader.swap(newStlReader);
+        stlReaderOrigin.swap(newStlReaderOrigin);
+        stlReaderShifted.swap(newStlReaderShifted);
+        extendedDomain.swap(newExtendedDomain);
+        cuboidGeometry.swap(newCuboidGeometry);
+        loadBalancer.swap(newLoadBalancer);
+        superGeometry.swap(newSuperGeometry);
 
         NSlattice.swap(NSlatticeNew);
         NSlatticeNew.reset();
@@ -846,12 +866,10 @@ int main( int argc, char* argv[] )
         newLoadBalancer.reset();
         newSuperGeometry.reset();
 
-        // goto is not necessary if the coupling operation is also initiated as a pointer!
         goto label;
       }
     }
   }
-
   NSlattice->getStatistics().print( converter->getLatticeTime( maxPhysT ),converter->getPhysTime( converter->getLatticeTime( maxPhysT ) ) );
 
   timer.stop();
